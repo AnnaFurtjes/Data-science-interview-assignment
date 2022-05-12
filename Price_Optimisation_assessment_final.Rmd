@@ -1,0 +1,978 @@
+---
+title: "UK retailer Assignment: Online Price Optimisation"
+date: "March 2022"
+output: 
+  html_document:
+    code_folding: hide
+    toc: yes
+    toc_depth: 1
+    toc_float: yes
+    theme: spacelab
+---
+
+<br>
+<br>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, root.dir = "C:/Users/k1894405/Documents/GitHub/UK retailer", warning = F, message = F)
+```
+
+
+
+I applied to an internship with a major UK retailer, who sent me an assignment. This solution got me to the next round of interviews. 
+
+
+
+***  
+
+
+
+**Questions**
+
+  1. Give an overview of the data. What issues are there?
+  
+  2. Assuming we want to increase profit, provide the recommended prices for each of the products.
+  
+  3. Give a measure of how good the model is and discuss why you chose this measure?
+  
+  4. Give an estimate of the uncertainty of the recommended price and discuss how it was constructed.
+  
+  5. How would you go about testing this in reality?
+  
+  6. How would you go about improving the model?
+  
+
+  
+
+<br>
+<br>
+<br>
+
+***
+
+
+# 1. Give an overview of the data. What issues are there? {.tabset}
+
+```{r overview}
+library(knitr)
+
+retaildata = read.csv("retailer_sales.csv", header=T)
+
+# format date
+retaildata$Date = as.Date(retaildata$Date, format = "%d/%m/%y")
+
+# determine first and last date
+min_date = min(retaildata$Date)
+max_date = max(retaildata$Date)
+
+# work out number of unique product IDs
+num_prod = length(unique(retaildata$Product_id))
+
+# work out number of entries
+# no missing variables, tested with: sum(is.na(retaildata)) == 0 
+num_entry=nrow(retaildata)
+
+```
+
+
+The available data contains information on retaildata's online sales between `r min_date` and `r max_date` for `r num_prod` products (total number of entries: `r num_entry`; no missing values). Find basic descriptive statistics for the raw data contained in the data set below. These statistics can help to get a better intuition for the data at hand.
+
+<br>
+<br>
+
+
+
+## Summary Table
+```{r}
+### inspect variables Cost_Price & Selling_Price & profit and store results in a table
+table = data.frame(matrix(nrow = 6, ncol = 4))
+names(table) = c("Statistic", "Cost_Price", "Selling_price","Sales_qty")
+table$Statistic = c("Mean","Standard Deviation", "Median","Mode","Minimum","Maximum")
+
+
+for(i in c("Cost_Price","Selling_price","Sales_qty")){
+  
+  # calculate basic stats
+  table[which(table$Statistic == "Mean"),i] = mean(retaildata[,i],na.rm=T)
+  table[which(table$Statistic == "Standard Deviation"),i] = sd(retaildata[,i],na.rm=T)
+  table[which(table$Statistic == "Median"),i] = median(retaildata[,i],na.rm=T) 
+  table[which(table$Statistic == "Median"),i] = median(retaildata[,i],na.rm=T) 
+  
+  d<-density(retaildata[,i])
+  table[which(table$Statistic == "Mode"),i] = d$x[which.max(d$y)]
+  
+  table[which(table$Statistic == "Maximum"),i] = max(retaildata[,i],na.rm=T) 
+  table[which(table$Statistic == "Minimum"),i] = min(retaildata[,i],na.rm=T) 
+}
+
+
+kable(table, digits=2)
+```
+
+The most popular product in 2020 was item `r retaildata[which(retaildata$Sales_qty == max(retaildata$Sales_qty)),"Product_id"]`.
+
+## Plots
+
+```{r plot_descriptives}
+library(cowplot)
+library(ggplot2)
+library(PupillometryR)
+
+make_pretty = function(){
+  theme_bw()+
+  theme(text = element_text(size=12),
+        axis.text.x = element_blank(),
+        axis.text.y = element_text(size=13, colour='#696969'),
+        axis.title.y = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.title.x = element_blank(),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank())
+}
+
+retaildata$name = rep("NA",nrow(retaildata))
+
+plot_Selling_price=
+  ggplot(data=retaildata,aes(x=name, y=Selling_price))+
+  geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = .8, colour="#1A1A1A", fill = "#98bdcd",alpha=0.1,lwd=1) +
+  geom_point(aes(y = Selling_price), position = position_jitter(width = .15), size = .5, alpha = 1,colour="#98bdcd")+
+  geom_boxplot(width = .2, outlier.shape = NA, alpha = 0.5, colour="#1A1A1A", lwd=1)+ 
+  ylab("Selling Price")+
+  make_pretty()
+
+
+plot_Cost_Price=
+  ggplot(data=retaildata,aes(x=name, y=Cost_Price))+
+  geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = .8, colour="#1A1A1A", fill = "#98bdcd",alpha=0.1,lwd=1) +
+  geom_point(aes(y = Cost_Price), position = position_jitter(width = .15), size = .5, alpha = 1,colour="#98bdcd")+
+  geom_boxplot(width = .2, outlier.shape = NA, alpha = 0.5, colour="#1A1A1A", lwd=1)+ 
+  ylab("Cost Price")+
+  make_pretty()
+
+
+plot_Quantity=
+    ggplot(data=retaildata,aes(x=name, y=Sales_qty))+
+  geom_flat_violin(position = position_nudge(x = .2, y = 0), alpha = .8, colour="#1A1A1A", fill = "#98bdcd",lwd=1) +
+  geom_point(aes(y = Sales_qty), position = position_jitter(width = .15), size = .5,colour="#98bdcd")+
+  geom_boxplot(width = .2, outlier.shape = NA, alpha = 0.5, colour="#1A1A1A", lwd=1)+ 
+  ylab("Sales per product per day")+
+  make_pretty()
+
+
+
+plot_grid(plot_Cost_Price, plot_Selling_price,plot_Quantity, ncol=3, labels = c("A","B","C"))
+```
+
+## Sales by product
+
+```{r}
+library(DT)
+sales = aggregate(retaildata['Sales_qty'], by = retaildata['Product_id'], FUN=sum)
+datatable(sales[order(sales$Sales_qty, decreasing = T),], rownames=FALSE, filter="top",options= list(pageLength=5,scrollX=T))
+```
+
+#
+
+<br>
+<br>
+
+***
+
+## Data cleaning steps
+
+**Cost price variable**
+
+  - `Cost price` range is sensible as it's positive and it seems believable that retaildata's most expensive product costs `r max(retaildata$Cost_Price)` pounds.
+  
+  - Even when it is an outlier, this most extreme value has several entries (so it's probably not a mistake) and probably reflects an unusually expensive product.
+  
+  - Considering `cost prices` probably already exist in the system, it is unlikely that this variable will have been affected by human error. No need to clean cost price variable.
+
+<br>
+<br>
+
+
+**Selling price**
+
+  - Some extreme values distort the distribution (see plot) and I imagine this variable is more likely to have been affected by human error (for example, when scanning the item at the till). 
+  
+  - Considering the maximum cost price is `r round(max(retaildata$Cost_Price),digits=2)`, the highest values in the selling price variable seems very high (maximum value = `r round(max(retaildata$Selling_price),digits=2)`). This would be worth double checking, but considering that most values appear more than once in the data set, I will exclude the three most extreme values in `selling price` that only occur once (assuming this was entered by mistake).
+  
+  - All other values are positive which is sensible.
+  
+  - `r sum(retaildata$Selling_price ==0)` values are null, which means these items have been given out for free. While this is probably not part of a deliberate pricing strategy, we'll keep the null values for now to get better power when modelling the demand curves below. However, this would be worth double checking with staff in-store to confirm this has not been entered by mistake.
+
+```{r clean_selling}
+# order data set starting with largest selling price and keep the three most extreme values
+exclude = order(retaildata$Selling_price, decreasing=T)[1:3]
+retaildata[exclude,]=NA
+
+```
+
+This cleaning step resulted in `r length(exclude)` deleted data points, and we now continue to analyse a cleaned data set with `r nrow(retaildata)` entries.
+
+<br>
+<br>
+
+  
+**Sales quantity**
+
+  - Investigate extreme value in `Sales_qty` as observed in plot.
+  
+```{r}
+# extract ID for this product
+id = retaildata$Product_id[which(retaildata$Sales_qty == max(retaildata$Sales_qty,na.rm=T))]
+# subset data frame to info only on this product
+subset = retaildata[which(retaildata$Product_id == id),]
+
+kable(subset[order(subset$Sales_qty, decreasing = T)[1:4],1:5], row.names=F)
+```
+
+  - There must have been a discount on this product on the 8th of January, which explains why so many of this product were sold. While this will also not be reflective of retaildata's pricing strategy (Selling price is below the Cost price), I will keep it for analysis to have more entries/ more power when modelling demand curves. 
+
+
+
+  - `r sum(retaildata$Sales_qty == 1, na.rm=T)` products have only been bought once in this data set, which is probably not representative for a usual day at retaildata (even in the online store) and it will probably make analyses unstable. To maximise the number of data points used for analysis, I will, however, leave these entries in. 
+  
+
+  - Transform `Sales_qty` into integer variable to make sure only full items are sold (not half items, for example).
+  
+```{r}
+# transform into integer
+retaildata$Sales_qty=as.integer(retaildata$Sales_qty)
+```
+
+<br>
+
+
+***
+
+<br>
+<br>
+
+## Display overall profit throughout 2020
+
+For the purpose of the plot below, I define Profit as: 
+
+  $$ Profit = (Selling price - Cost price) * Sales qty $$
+
+<br>
+
+I then aggregate `Sales_qty` and `Profit` across all products for each day. We can see in the plot that `Profit` was relatively stable throughout the year, with a big peak around Christmas. 
+
+
+<br>
+
+
+```{r}
+# calculate profit
+retaildata$Profit = with(retaildata, (Selling_price - Cost_Price)*Sales_qty)
+profit_by_day = aggregate(retaildata['Profit'], by = retaildata['Date'], FUN=sum)
+
+
+# display price changes across the year
+ggplot(profit_by_day, aes(x = Date, y=Profit)) +
+  geom_point(color = 4) +
+  ylab("Profit (pounds)")+
+  xlab("2020")+
+  ggtitle(paste0("Profit throughout 2020"))+
+  theme(axis.text.x = element_text(angle = 90))+
+  theme_bw()+
+    theme(text = element_text(size=12),
+        axis.text.x = element_text(size=13, colour='#696969'),
+        axis.text.y = element_text(size=13, colour='#696969'),
+        axis.title.y = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.title.x = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank())
+
+```
+
+Descriptive statistics:
+
+  - Average profit of retaildata online sales in 2020 = `r round(mean(profit_by_day$Profit, na.rm=T), digits=2)` pounds (SD = `r round(sd(profit_by_day$Profit, na.rm=T), digits=2)`)
+
+  - Most profitable day made `r round(max(profit_by_day$Profit), digits=2)` pounds on the `r profit_by_day$Date[which(profit_by_day$Profit == max(profit_by_day$Profit))]`
+  
+  - Least profitable day made `r round(min(profit_by_day$Profit), digits=2)` pounds on the `r profit_by_day$Date[which(profit_by_day$Profit == min(profit_by_day$Profit))]`. I suggest this is the first indication that this is a relatively unstable data set, and I don't imagine that this is representative of online sales at retaildata. 
+
+
+
+
+***
+
+<br>
+<br>
+<br>
+
+
+
+# 2. Assuming we want to increase profit, provide the recommended prices for each of the products.
+
+
+It seems to be the consensus across the economics literature (e.g., Phillips, Robert Lewis. Pricing and revenue optimization. Stanford University Press, 2005.) that this problem should be solved by taking into account `Sales_qty`, `Selling_price` and `Cost_price`; three variables available in this data set. 
+
+
+
+As I assume the relationship between the variables will differ with each product, I aim to estimate the optimal price for each product individually.
+
+
+<br>
+<br>
+
+## Price sensitivity 
+
+If the sole motivation is to increase profit, I suggest that the most promising targets for price optimization should be products that are least sensitive to price change and don't already generate much profit. People will keep buying essential products, even when they are more expensive, and there will be most potential for improvement if we pick the products that are not very beneficial yet. 
+
+
+
+To understand if some products are more sensitive to price change than others, I calculate the correlation between `Selling_price` and `Sales_qty` for each product. We would expect this correlation to be negative for all items, but that is not the case (see below). Many items have very few data points, resulting in unreliable statistics, which we must keep in mind when interpreting the table below. Also, this table is only calculated for items that were recorded to have been sold at more than 4 price levels, because we cannot calculate correlations otherwise (when there is no variance in the data set, we can't calculate correlations, or any other statistics concerned with variance). As described in the data cleaning step, some items have been bought only once at each available price level, resulting in the same problem (low variance), and these items are also excluded from the table below.
+
+
+
+
+The lack of data is also reflected in the large confidence intervals displayed in the table below. The table is ordered to display the items with the most significant correlation. 
+
+```{r cluster}
+# define sensitivity to price as the corr between price level & Sales quantity
+# we expect all correlations to be negative = the higher the price, the fewer sales
+# the smaller the correlation value, the more Sales_qty goes down with higher prices 
+# iterate through each item
+iter=as.integer(unique(retaildata$Product_id))
+iter=iter[-which(is.na(iter))]
+
+# store price sensitivity in a table
+table = data.frame(matrix(ncol=6, nrow=length(iter)))
+names(table) = c("Product_id","cor_sales_price","Price_levels","p_val", "lower_ci","upper_ci")
+table$Product_id=iter
+
+for(i in iter){
+  # subset data frame for one product
+  subset = retaildata[which(retaildata$Product_id == i),]
+  
+  # aggregate sales by price across the year
+  sales_by_price = aggregate(subset['Sales_qty'], by = subset['Selling_price'], FUN=sum)
+  # get average Sales_qty for each Selling price
+  vector = as.numeric(unlist(table(subset$Selling_price)))
+  sales_by_price$Sales_qty=sales_by_price$Sales_qty/vector
+  
+  # if an item has fewer price levels than 4, we won't be able to calculate a correlation - store NA in table
+  if(length(table(sales_by_price$Selling_price))<4 | length(table(sales_by_price$Sales_qty)) <= 1){
+    
+    table$cor_sales_price[which(table$Product_id == i)]=NA
+    
+  }else{
+  # calculate correlation
+  est=with(sales_by_price, cor.test(Sales_qty, Selling_price))
+  
+  # store values in table
+  table$cor_sales_price[which(table$Product_id == i)]=est$estimate
+  table$Price_levels[which(table$Product_id == i)] = est$parameter+2
+  table$p_val[which(table$Product_id == i)] = est$p.value
+  table[which(table$Product_id == i),c("lower_ci","upper_ci")] = est$conf.int
+  }
+}
+# remove items with missing correlation
+table=table[-which(is.na(table$cor_sales_price)),]
+
+# round numbers
+table$`Price sensitivity` = round(table$cor_sales_price, digits = 2)
+table$`p-value` = signif(table$p_val)
+
+# format confidence interval
+table$CI95 = paste(round(table$lower_ci, digits=2), "to", round(table$upper_ci, digits=2))
+
+# order table by most significant p-values
+datatable(table[order(table$p_val),c("Product_id","Price sensitivity","CI95","p-value")], rownames=FALSE, filter="top",options= list(pageLength=5,scrollX=T), caption = "Price sensitivity")
+
+```
+
+
+<br>
+<br>
+
+If we now plot price sensitivity against profit, we may be able to identify products that are low in Price sensitivity and low in profit, and are therefore most promising targets for price optimisation. 
+
+
+
+```{r}
+# aggregate profit by product
+profit_by_product = aggregate(retaildata['Profit'], by = retaildata['Product_id'], FUN=sum)
+
+plot = merge(table[,c("Product_id","cor_sales_price","lower_ci","upper_ci")], profit_by_product, by="Product_id")
+
+ggplot(data = plot, aes(x = cor_sales_price, y= Profit))+
+  geom_point(color="blue", alpha=0.7)+
+  geom_errorbar(aes(y=Profit, xmin=lower_ci, xmax=upper_ci), color="blue", alpha=0.2)+
+  xlab("Price sensitivity")+
+  geom_vline(xintercept = 0, color="red")+
+  theme_bw()+
+    theme(text = element_text(size=12),
+        axis.text.x = element_text(size=13, colour='#696969'),
+        axis.text.y = element_text(size=13, colour='#696969'),
+        axis.title.y = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.title.x = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank())
+
+
+```
+
+
+We find that many items have a positive price sensitivity (i.e., people bought more of a product when its price was increased).
+This is not what I expected, and I therefore suggest that all items on the right hand side of the red line are not suitable for the analyses below. This is in line with the fact that we have few data points for many products and their confidence interval overlaps with zero (low statistical power).
+Future investigations with richer data will be needed to calculate more reliable statistics, especially for those positively correlated products. 
+
+
+
+If the data structure displayed in this plot had suggested there may be groups of products that resemble each other in their price sensitivity and profit, it would have been interesting to perform cluster analysis, for example, to explore trends across those groups of products. 
+
+
+
+
+
+
+Instead, the analysis below will use two products for which we have the most information which will allow us maximise the robustness of our analysis. 
+I imagine this will not usually be an issue for retaildata's online sales data, because there must be so many more data than contained in this data set. 
+For example, as mentioned in the data cleaning section, many items have only been bought once in a day, which I imagine is rare for any items sold at retaildata.
+
+
+
+<br>
+<br>
+<br>
+
+***
+
+## Price optimisation 
+
+*Relevant mathematical definitions:*
+
+  1. We assume a linear "demand curve" or "Price-response function" that describes a linear negative relationship between `Sales_qty` and `Selling_price`. The more we charge for a product, the less people will buy it, and vice versa. With the equation below, we can predict the value of `Sales_qty` at each level of `Selling_price`.
+  
+  $$ Sales qty(Selling price) = intercept + slope*Selling price $$`
+
+  2. We define `Profit` at each `Selling_price` as the difference between `Selling_price` and `Cost_price` multiplied by the `Sales_qty`.
+  
+  $$ Profit(Selling price) = (Selling price - Cost price) * Sales qty(Selling price) $$`
+  
+  If we express this with intercept and slope from the first equation, we get:
+  
+  $$ Profit(Selling price) = slope*Selling price^2 - slope*Selling price*Cost price + intercept(Selling price - Cost price) $$`
+
+
+
+  3. Using calculus, we can find a local maximum of this function by getting  the first derivative, which we set equal to 0, and then we solve for `Selling_price` which is going to give us the critical numbers (i.e. optimal price). This will give us the optimal `Selling price` at maximum profit under the assumption that the linear definition of `Profit` is correct.
+  
+$$ optimal Sellingprice = (slope*Cost price - intercept)/(2*slope)  $$`
+
+
+Below I present the optimal price for two product that I selected because:
+
+  1. these products demonstrated the (most significant) negative relationships between `Sales_qty` and `Selling_price`, which is sensible to assume but many products did not fulfill.
+  
+  2. these products had data points at the most levels of `Selling_price` which allows to get more stable statistics. The more variability we have in the data, the better we can perform inferential statistics in which we model variances.
+  
+  
+<br>
+<br>
+
+***
+
+<br>
+
+
+
+```{r}
+# identify products with negative correlation between sales_qty and price
+neg_items = table[which(table$cor_sales_price < 0 & table$p_val < 0.05),]
+# order them by how significant corr is and by how many price levels they have been measured at
+item1 = neg_items[order(neg_items$Price_levels,neg_items$p_val,decreasing = T),"Product_id"][1]
+item2= neg_items[order(neg_items$Price_levels,neg_items$p_val,decreasing = T),"Product_id"][2]
+```
+
+
+The code above selects item `r item1` and item `r item2` based on the requirements outlined above and I will demonstrate the procedure for price optimisation below using them as examples.
+
+
+<br>
+<br>
+
+
+
+## Item `r item1`
+
+This plot displays the different price levels that this product has been measured at throughout 2020. 
+
+```{r}
+# subset retaildata data set for data points of this product
+subset = retaildata[which(retaildata$Product_id == item1),] 
+
+make_prettier=function(){theme(text = element_text(size=12),
+        axis.text.x = element_text(size=13, colour='#696969'),
+        axis.text.y = element_text(size=13, colour='#696969'),
+        axis.title.y = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.title.x = element_text(face="bold", colour='#1A1A1A', size=17),
+        axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.border = element_blank())}
+
+# display price changes across the year
+ggplot(subset, aes(Date, Selling_price)) +
+  geom_point(color = 4) +
+  ylab("Selling price")+
+  xlab("")+
+  ggtitle(paste0("Prices charged for product ", item1, " across 2020"))+
+  theme(axis.text.x = element_text(angle = 90))+
+  theme_bw()+
+  make_prettier()
+
+
+```
+
+Next, I will aggregate the data by `Selling_price` because this is our main variable of interest. We then take an average `Sales_qty` across the number of days this price was on offer for to get the average Sales_qty at this price. The code below also determines the cost price for this product and checks that the costs were stable across 2020.
+
+
+```{r}
+# aggregate Sales quantity by Selling price
+sales_by_price = aggregate(subset['Sales_qty'], by = subset['Selling_price'], FUN=sum)
+# get average Sales_qty for each Selling price
+vector = as.numeric(unlist(table(subset$Selling_price)))
+sales_by_price$Sales_qty=sales_by_price$Sales_qty/vector
+
+# test that Cost price is stable across the year (for this product)
+if(length(table(subset$Cost_Price))!=1){print("The cost price is not stable across the year!"); break}
+
+# store cost price in variable
+product_cost = subset$Cost_Price[1]
+```
+
+The `Cost_price` for item `r item1` is `r product_cost` pounds, and it has been the same throughout the whole year.
+
+
+<br>
+<br>
+
+
+## Demand Curve item `r item1`
+
+The Demand Curve depicts the general trend of a negative association between `Sales_qty` and `Selling_price` that we assumed in equation 1. The more expensive the product, the less people buy it. 
+
+The regression line modelling the average relationship between the two variables is indicated by the blue line, surrounded by confidence intervals. 
+
+```{r}
+ggplot(sales_by_price, aes(Sales_qty,Selling_price)) +
+  geom_point(colour="red", alpha=0.5) +
+  geom_smooth(method='lm') +
+  ggtitle("Demand Curve")+
+  xlab("Sales quantity")+
+  ylab("Selling price")+
+  theme_bw()+
+  make_prettier()
+
+```
+
+<br>
+<br>
+
+
+
+### Best price
+
+In the code below, I define variables used in the analysis. I define profit as observed in the data set as `Sales_qty * (Selling_price-product_cost)`. I then fit the demand curve model from which I get the slope and intercept needed for the price optimisation function. I also use those model parameters to predict profit in order to later evaluate model performance. 
+
+
+<br>
+
+
+
+```{r}
+# define variables
+Selling_price = sales_by_price$Selling_price
+demand = sales_by_price$Sales_qty
+product_cost = subset$Cost_Price[1]
+profit = demand*(Selling_price-product_cost) 
+
+# Fit of the demand model
+model = lm(demand~Selling_price)
+
+sjPlot::tab_model(lm(demand~Selling_price), title = "Regression results Demand Curve", emph.p = F, show.ci = F)
+
+profit_predicted = model$fitted.values*(Selling_price - product_cost)
+
+# store in one data.frame for plotting
+data_to_plot = data.frame('Prices' = Selling_price, 'Demand' = demand,
+                       'Profit.fitted' = profit_predicted, 'Profit' = profit)
+data_item1 = data_to_plot
+
+
+# Pricing Optimization
+slope = model$coefficients[2]
+intercept = model$coefficients[1]
+
+# save variables for exercise 4
+slope_item1 = slope
+inter_item1 = intercept
+se_slope_item1=summary(model)$coefficients[2,2]
+se_inter_item1=summary(model)$coefficients[1,2]
+product_cost_item1 = product_cost
+```
+
+
+The regression results indicate that we observe a significant relationship between `Sales_qty` and `Selling_price`. We can explain `r round(summary(model)$r.squared, digits=4) * 100`% of the variance in demand by changes observed in price, which would be considered a moderate effect (according to Cohen 1988). This suggests that knowing the price level of a product, we can relatively reliably predict the demand (i.e., Sales_qty).
+
+```{r}
+# calculate optimum price
+price_max_profit = (slope*product_cost - intercept)/(2*slope)
+```
+
+The optimum price for item `r item1` is `r round(price_max_profit, digits=2)` pounds, which I have calculated using the equation outlined above `(slope*product_cost - intercept)/(2*slope)`. The item is produced at a cost of `r product_cost` pounds, indicated by the red line in the plot below.
+
+
+
+```{r}
+
+ggplot(data = data_item1, aes(x = Prices, y = Profit)) +
+  geom_point() + 
+  geom_vline(xintercept = price_max_profit, lty = 2) +
+  geom_line(data = data_item1, aes(x = Prices, y = Profit.fitted), color = 'blue')+
+  geom_vline(xintercept = product_cost, color="red")+
+  theme_bw()+
+  make_prettier()
+```
+
+It would have been interesting to compare this price to the price charged by the competitor, but the competitor data set does not include this item. 
+
+
+
+<br>
+<br>
+
+***
+
+<br>
+<br>
+
+## Item `r item2`
+
+The code used below is the same as used for item `r item1`.
+
+```{r}
+subset = retaildata[which(retaildata$Product_id == item2),] 
+
+# display price changes across the year
+ggplot(subset, aes(Date, Selling_price)) +
+  geom_point(color = 4) +
+  ylab("Selling price")+
+  xlab("")+
+  ggtitle(paste0("Prices charged for product ", item2, " across 2020"))+
+  theme(axis.text.x = element_text(angle = 90))+
+  theme_bw()+
+  make_prettier()
+
+
+```
+
+
+```{r}
+# aggregate Sales quantity by Selling price
+sales_by_price = aggregate(subset['Sales_qty'], by = subset['Selling_price'], FUN=sum)
+# get average Sales_qty for each Selling price
+vector = as.numeric(unlist(table(subset$Selling_price)))
+sales_by_price$Sales_qty=sales_by_price$Sales_qty/vector
+
+# test that Cost price is stable across the year (for this product)
+if(length(table(subset$Cost_Price))!=1){print("The cost price is not stable across the year!"); break}
+
+# store cost price in variable
+product_cost = subset$Cost_Price[1]
+```
+
+The `Cost_price` for item `r item1` is `r product_cost` pounds, and it has been the same throughout the whole year.
+
+
+### Demand Curve for item `r item2`
+
+
+```{r}
+ggplot(sales_by_price, aes(Sales_qty,Selling_price)) +
+  geom_point(colour="red", alpha=0.5) +
+  geom_smooth(method='lm') +
+  ggtitle("Demand Curve")+
+  xlab("Sales quantity")+
+  ylab("Selling price")+
+  theme_bw()+
+  make_prettier()
+
+```
+
+
+
+<br>
+<br>
+
+
+## Best price
+
+
+
+```{r}
+# define variables
+Selling_price = sales_by_price$Selling_price
+demand = sales_by_price$Sales_qty
+product_cost = subset$Cost_Price[1]
+profit = demand*(Selling_price-product_cost) 
+
+# Fit of the demand model
+model = lm(demand~Selling_price)
+
+sjPlot::tab_model(lm(demand~Selling_price), title = "Regression results Demand Curve", emph.p = F, show.ci = F)
+
+# model profit based on demand curve estimates
+profit_predicted = model$fitted.values*(Selling_price - product_cost)
+
+# store in one data.frame for plotting
+data_to_plot = data.frame('Prices' = Selling_price, 'Demand' = demand,
+                       'Profit.fitted' = profit_predicted, 'Profit' = profit)
+data_item2 = data_to_plot
+
+# Pricing Optimization
+slope = model$coefficients[2] #alpha
+intercept = model$coefficients[1] #beta
+
+# save variables for exercise 4
+slope_item2 = slope
+inter_item2 = intercept
+se_slope_item2=summary(model)$coefficients[2,2]
+se_inter_item2=summary(model)$coefficients[1,2]
+product_cost_item2 = product_cost
+```
+
+The regression results below indicate that we observe a significant relationship between Sales_qty and Selling_price. We can explain `r round(summary(model)$r.squared, digits=4) * 100`% of the variance in demand by changes observed in price, which would be considered a small effect. In contrast with item `r item1`, this suggests we cannot predict demand based on selling price as reliably. 
+
+
+
+```{r}
+# calculate optimal price
+price_max_profit = (slope*product_cost - intercept)/(2*slope)
+```
+
+The optimum price for item `r item1` is `r round(price_max_profit, digits=2)` pounds, which I have calculated using the equation outlined above `(slope*product_cost - intercept)/(2*slope)`. The item is produced at a cost of `r product_cost` pounds. This price seems very high, but it's not surprising as we know that our model is not as good and reliable for this item, as it was for item `r item1`.
+
+```{r}
+
+ggplot(data = data_to_plot, aes(x = Prices, y = Profit)) +
+  geom_point() + 
+  geom_vline(xintercept = price_max_profit, lty = 2) +
+  geom_line(data = data_to_plot, aes(x = Prices, y = Profit.fitted), color = 'blue')+
+  geom_vline(xintercept = product_cost, color="red")+
+  theme_bw()+
+  make_prettier()
+```
+
+
+<br>
+<br>
+
+***
+
+# 3. Give a measure of how good the model is and discuss why you chose this measure?
+
+
+
+The main indication of model performance of a simple linear model is already discussed above. The variance explained (R-squared %) indicates how well Selling price predicts demand (i.e. Sales_qty). Please refer to the discussion of R-squared in the section for each individual item. 
+
+
+I decided to use R2 as an indication of model performance, because it is very straightforward to interpret, and is most commonly used in samples that are too small for out-of-sample prediction. 
+
+***
+<br>
+
+
+The price optimisation relies on the assumption of a demand curve which we use to estimate profit. But we can also directly calculate Profit as `demand*(Selling_price-product_cost)`. The overlap between `Profit` and `Profit.fitted` gives us an indication of how well the demand curve approximates reality, and therefore how good the model is. In a larger data set, ideally we would fit the values in one part of the data set, and predict it into another part of the dataset. This would allow for better generalisability but the data is not rich enough to do this reliably here. 
+
+```{r}
+# correlation profit & profit.fitted item 1
+est1 =cor.test(data_item1$Profit, data_item1$Profit.fitted)
+R2_1 = round((est1$estimate)^2 *100, digits=2)
+p1 = est1$p.value
+
+# correlation profit & profit.fitted item 2
+est2 = cor.test(data_item2$Profit, data_item2$Profit.fitted)
+R2_2 = round((est2$estimate)^2 *100,digits=2)
+p2 = est2$p.value
+
+
+```
+
+
+
+<br>
+
+
+
+- Profit explains `r R2_1` % (p-value = `r round(p1, digits=2)`; not significant) in `Profit.fitted` in item `r item1`.
+
+- Profit explains `r R2_2` % (p-value = `r round(p2, digits=2)`; not significant) in `Profit.fitted` in item `r item2`.
+
+
+
+
+`Profit.fitted` and `Profit` are not even significantly correlated suggesting the model is poor, demonstrating that we have no evidence (statistically) to conclude that our model is well-suited to predict Profit & recommend prices. 
+
+
+<br>
+
+
+Let us get an idea of the discrepancy between the two measures for item `r item1` and item `r item2`.
+
+
+As the difference between `Profit` and `Profit.fitted` is normally distributed (item `r item1`), I will use a non-parametric significance test to see whether `Profit` and `Profit.fitted` have the same median, or whether the median is significantly different.
+I will use a parametric t-test for the normally distributed item, which will allow for a bit better power.
+
+
+
+
+
+
+
+```{r}
+data_item1$diff = data_item1$Profit.fitted - data_item1$Profit
+plot1=ggplot(data = data_item1, aes(x = diff))+
+  geom_histogram(color = "darkgreen", alpha=0.5)+
+  theme_bw()+
+  make_prettier()
+
+data_item2$diff = data_item2$Profit.fitted - data_item2$Profit
+plot2=ggplot(data = data_item2, aes(x = diff))+
+  geom_histogram(color = "darkred", alpha=0.5)+
+  theme_bw()+
+  make_prettier()
+
+plot_grid(plot1, plot2, labels=c(paste0("Item ", item1), paste0("Item ", item2)))
+```
+
+## Sign-rank test item `r item1`
+
+```{r}
+t.test(data_item1$diff, mu = 0)
+
+```
+
+## Sign-rank test item `r item2`
+
+```{r}
+library(nonpar)
+signtest(data_item2$diff, m=0, conf.level=0.95, exact=FALSE)
+```
+
+Based on this data, we have not enough evidence to reject the null hypothesis for both items, meaning that we have to assume that there is no average difference between `Profit` and `Profit.fitted` (even when we found above they are not even correlated). We know that `Profit.fitted` was based on models with small to moderate R-squared values (at least for item `r item2`), and still we find no difference. I suggest this is a general reflection that it is hard to get any reliably conclusions from this data on an item-by-item basis. The sample size is small and the variables are unreliable, as mentioned throughout this document and displayed in the plots. I suggest the power is likely too small to draw any reliable and generalisable conclusions from the models. 
+
+<br>
+
+This is a common problem for many statistical analyses as it's costly to collect data, but I suggest data richness will not usually be a problem for retaildata, not even for the online sales. It would be interesting to implement this suggested pipeline to the real retaildata online sales data.
+
+<br>
+<br>
+
+
+
+*** 
+
+# 4. Give an estimate of the uncertainty of the recommended price and discuss how it was constructed.
+
+The recommended price was based on the estimated slope (and intercept) in the demand curve. We can construct a 95% confidence interval around the estimated slope, indicating a range of values that we assume the true value to lie between. 
+The confidence interval is calculated based on the standard error of the slope which is defined as the standard deviation (sigma) divided by the square route of n. This means that the standard error will shrink with increasing observations. With the few observations in this data set we expect large confidence intervals, which will be especially true for item `r item2` with the low R-squared value.
+
+
+
+
+Once we have the confidence interval for the slope, we re-calculate the recommended price with the extremes of this boundary. Because of the optimum price definition used here, the upper bound of the confidence interval will always have a larger impact on the estimate.
+
+
+
+The calculation below is assuming that the intercept point estimate is correct, while it also has a standard error. In this exercise, we are only interested in the uncertainty (i.e. the range of slope, not the exact value). As variability in slope should be independent of variability in intercept, the range we get for slope should be representative for slope at a stable intercept, even if the real intercept point estimate was different to the one we're assuming here. This however also means that the plot below only gives us an idea of the uncertainty; the range for the true point estimate will be larger. We would be able to shrink the confidence intervals with more data points. 
+
+
+```{r}
+## item 1
+price1 = (slope_item1*product_cost_item1 - inter_item1)/(2*slope_item1)
+
+# get confidence interval around slope
+ci_item1_lower = slope_item1 - 1.96*se_slope_item1
+ci_item1_upper = slope_item1 + 1.96*se_slope_item1
+# get range of optimal prices
+price_item1_upper = (ci_item1_upper*product_cost_item1 - inter_item1)/(2*ci_item1_upper)
+price_item1_lower = (ci_item1_lower*product_cost_item1 - inter_item1)/(2*ci_item1_lower)
+
+## item 2
+price2 = (slope_item2*product_cost_item2 - inter_item2)/(2*slope_item2)
+
+# get confidence interval around slope
+ci_item2_lower = slope_item2 - 1.96*se_slope_item2
+ci_item2_upper = slope_item2 + 1.96*se_slope_item2
+# get range of optimal prices
+price_item2_upper = (ci_item2_upper*product_cost_item2 - inter_item2)/(2*ci_item2_upper)
+price_item2_lower = (ci_item2_lower*product_cost_item2 - inter_item2)/(2*ci_item2_lower)
+
+
+# store in data frame
+data_to_plot = data.frame(item = c(paste0("item ",item1),paste0("item ",item2)),
+                          estimate = c(price1, price2), 
+                          lower_ci = c(price_item1_lower, price_item2_lower),
+                          upper_ci = c(price_item1_upper,price_item2_upper))
+
+ggplot(data = data_to_plot)+
+  geom_point(aes(x = item, y = estimate))+
+  geom_errorbar(aes(x = item, ymin = lower_ci, ymax = upper_ci))+
+  ylab("Optimum Price in pounds")+
+  xlab("")+
+  theme_bw()+
+  make_prettier()
+```
+
+
+We can see that the uncertainty around the estimate is very high, especially for item `r item2`. This is likely due to the small number of observation as discussed throughout the document and reflects the R-squared values discussed above. 
+
+
+<br>
+<br>
+
+
+# 5. How would you go about testing this in reality?
+
+
+I am not certain what "this" is referring to, so I will assume this is referring to question 4, to the uncertainty around the recommended price. 
+
+
+
+In reality, I would collect more information on consumer behavior (Sales_qty) at more price levels, aiming to sample more data around the recommended optimum price. This would allow me to construct more reliable demand curves, and to update the recommended optimum price. In conjunction with observed profit over time, this will allow us to update price recommendations live depending on observed trends, and we will be able to verify whether the optimum price indeed maximises profit.
+
+***
+
+
+<br>
+<br>
+
+
+# 6. How would you go about improving the model?
+
+  - Collect more data
+  
+  - Test non-linear models, for example, quadratic relationships.
+  
+  - If I had more reliable & richer data: Out of sample prediction of the demand curve (i.e. get slope and intercept from one part of the sample and estimate optimum price in another part of the sample). This will generate more generalisable recommendations. 
+  
+  - Take into account individualised costumer data from the clubcard, for example. Can I class my costumers into groups that shop certain ways? Can I model Profit and Sales_qty within these groups? How do they differ? Can I class my products into groups?
+  
+  - What growth/ trends can we expect throughout the year (i.e., Christmas & Easter) that could help produce more reliable price recommendations? Are there any changes & general trends between years?
